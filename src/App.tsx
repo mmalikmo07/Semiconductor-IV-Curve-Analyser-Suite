@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   LineChart, 
   Line, 
@@ -12,8 +12,6 @@ import {
 } from 'recharts';
 import { 
   Play, 
-  Upload, 
-  Trash2, 
   Info,
   Sun,
   Moon,
@@ -26,7 +24,7 @@ import {
   formatParam
 } from './physics';
 import type { ExtractedParams } from './physics';
-import { exportCSV, savePlotImage, exportPDF } from './exports';
+import { savePlotImage, exportPDF } from './exports';
 import type { TableRow } from './exports';
 
 export default function App() {
@@ -52,13 +50,7 @@ export default function App() {
   const [isLogAxis, setIsLogAxis] = useState<boolean>(false);
   const [zoomForward, setZoomForward] = useState<boolean>(false);
   
-  // CSV Experimental Overlay
-  const [csvOverlay, setCsvOverlay] = useState<{
-    V: number[];
-    I: number[];
-    filename: string;
-    params: ExtractedParams;
-  } | null>(null);
+
 
   // Plotted Results
   const [isPlotted, setIsPlotted] = useState<boolean>(false);
@@ -113,76 +105,7 @@ export default function App() {
     return MATERIALS[name];
   };
 
-  // --- CSV PARSING ---
-  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (!text) return;
-
-      try {
-        const lines = text.split('\n').map(line => line.trim()).filter(line => line !== '');
-        if (lines.length < 2) throw new Error("CSV file must have a header and data rows.");
-
-        // Parse header to find Voltage/Current columns
-        const header = lines[0].split(/[;,]/).map(col => col.trim().toLowerCase());
-        let vIdx = -1, iIdx = -1;
-        for (let i = 0; i < header.length; i++) {
-          if (header[i].includes('voltage') || header[i] === 'v' || header[i].includes('volt')) {
-            vIdx = i;
-          } else if (header[i].includes('current') || header[i] === 'i' || header[i].includes('amp') || header[i].includes('curr')) {
-            iIdx = i;
-          }
-        }
-        if (vIdx === -1 || iIdx === -1) {
-          vIdx = 0;
-          iIdx = 1;
-        }
-
-        const parsedV: number[] = [];
-        const parsedI: number[] = [];
-
-        for (let r = 1; r < lines.length; r++) {
-          const row = lines[r].split(/[;,]/);
-          if (row.length <= Math.max(vIdx, iIdx)) continue;
-          const vVal = parseFloat(row[vIdx]);
-          const iVal = parseFloat(row[iIdx]);
-          if (!isNaN(vVal) && !isNaN(iVal)) {
-            parsedV.push(vVal);
-            parsedI.push(iVal);
-          }
-        }
-
-        if (parsedV.length === 0) throw new Error("Could not parse any numeric rows.");
-
-        // Detect if current is in mA and scale to Amps
-        let isMa = header.some(col => col.includes('ma'));
-        let I_arr = [...parsedI];
-        const maxVal = Math.max(...I_arr.map(Math.abs));
-        if (!isMa && maxVal > 2.0) {
-          isMa = true;
-        }
-        if (isMa) {
-          I_arr = I_arr.map(val => val / 1000.0);
-        }
-
-        const params = extractParameters(parsedV, I_arr, temperature);
-        setCsvOverlay({
-          V: parsedV,
-          I: I_arr,
-          filename: file.name,
-          params
-        });
-        alert(`Successfully loaded '${file.name}' with ${parsedV.length} data points.`);
-      } catch (err: any) {
-        alert(`CSV Upload Error: ${err.message || err}`);
-      }
-    };
-    reader.readAsText(file);
-  };
 
   // --- RUN ANALYSIS / PLOTTING ---
   const runAnalysis = () => {
@@ -259,12 +182,6 @@ export default function App() {
           rowData[`absI_${cIdx}`] = Math.max(1e-15, Math.abs(c.I[i])); // in Amps
         });
 
-        // Add CSV overlay points
-        if (csvOverlay) {
-          rowData['I_csv'] = csvOverlay.I[i] * 1000;
-          rowData['absI_csv'] = Math.max(1e-15, Math.abs(csvOverlay.I[i]));
-        }
-
         combinedPoints.push(rowData);
       }
       setChartData(combinedPoints);
@@ -301,18 +218,7 @@ export default function App() {
         vbr: `${vbr.toFixed(1)} V`
       }));
 
-      // Add CSV row if loaded
-      if (csvOverlay) {
-        rows.push({
-          name: `CSV: ${csvOverlay.filename}`,
-          vOn: formatParam(csvOverlay.params.V_turn_on, 'V'),
-          n: formatParam(csvOverlay.params.n_ideality, ''),
-          I_sat: formatParam(csvOverlay.params.I_sat, 'A'),
-          bandgap: 'Unknown',
-          rs: 'Unknown',
-          vbr: 'Unknown'
-        });
-      }
+
       setTableRows(rows);
     }
   };
@@ -612,35 +518,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Section: Experimental Overlay */}
-          <div>
-            <h2 className="section-title">Experimental CSV Overlay</h2>
-            {csvOverlay ? (
-              <div className="form-group">
-                <div style={{ fontSize: '12px', fontStyle: 'italic', color: 'var(--success)', fontWeight: 'bold' }}>
-                  Loaded: {csvOverlay.filename}
-                </div>
-                <button 
-                  className="button-danger"
-                  onClick={() => setCsvOverlay(null)}
-                >
-                  <Trash2 size={12} style={{ marginRight: '4px' }} /> Clear CSV
-                </button>
-              </div>
-            ) : (
-              <div className="form-group">
-                <label className="button-secondary" style={{ cursor: 'pointer' }}>
-                  <Upload size={14} /> Upload CSV
-                  <input 
-                    type="file" 
-                    accept=".csv,.txt"
-                    onChange={handleCsvUpload}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-              </div>
-            )}
-          </div>
+
         </div>
 
         <div className="sidebar-footer">
@@ -986,18 +864,7 @@ export default function App() {
                     />
                   ))}
 
-                  {/* Draw CSV Overlay */}
-                  {csvOverlay && (
-                    <Line 
-                      type="monotone"
-                      dataKey={isLogAxis ? 'absI_csv' : 'I_csv'}
-                      name={`Exp: ${csvOverlay.filename}`}
-                      stroke="#4f46e5"
-                      strokeDasharray="4 4"
-                      strokeWidth={1.5}
-                      dot={false}
-                    />
-                  )}
+
                 </LineChart>
               </ResponsiveContainer>
               </div>
@@ -1011,9 +878,6 @@ export default function App() {
             <div className="results-header">
               <h2 className="results-title">Extracted Device Parameters</h2>
               <div className="results-actions">
-                <button className="btn-pill-small" onClick={() => exportCSV(tableRows as TableRow[], analysisMode)}>
-                  📊 Export CSV
-                </button>
                 <button className="btn-pill-small" onClick={() => savePlotImage('[data-chart-container]')}>
                   💾 Save Plot Image
                 </button>

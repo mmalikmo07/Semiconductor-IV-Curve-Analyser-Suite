@@ -18,9 +18,24 @@ export interface TableRow {
 }
 
 // -----------------------------------------------
+// -----------------------------------------------
 // 1. Export CSV
 // -----------------------------------------------
-export function exportCSV(tableRows: TableRow[], analysisMode: string): void {
+export function exportCSV(
+  tableRows: TableRow[],
+  analysisMode: string,
+  chartData: any[] = [],
+  activeCurves: any[] = [],
+  isLogAxis = false
+): void {
+  const csvLines: string[] = [];
+
+  // Title / Section 1: Summary Parameters
+  csvLines.push(`"IV CURVE ANALYSER - EXTRACTED DEVICE PARAMETERS"`);
+  csvLines.push(`"Analysis Mode: ${analysisMode}"`);
+  csvLines.push(`"Exported: ${new Date().toLocaleString()}"`);
+  csvLines.push(''); // blank line
+
   const headers = [
     'Material/Condition',
     'Turn-on Voltage',
@@ -30,30 +45,74 @@ export function exportCSV(tableRows: TableRow[], analysisMode: string): void {
     'Series Res.',
     'Breakdown Vbr'
   ];
-
-  const csvLines: string[] = [headers.join(',')];
+  csvLines.push(headers.map(h => `"${h}"`).join(','));
 
   tableRows.forEach(row => {
+    // Sanitize ohms symbol to prevent character encoding issues in Excel
+    const sanitize = (val: string) => val.replace(/\u03a9/g, 'Ohm');
     const line = [
       `"${row.name}"`,
       `"${row.vOn}"`,
       `"${row.n}"`,
       `"${row.I_sat}"`,
       `"${row.bandgap}"`,
-      `"${row.rs}"`,
+      `"${sanitize(row.rs)}"`,
       `"${row.vbr}"`
     ].join(',');
     csvLines.push(line);
   });
 
-  const csvContent = csvLines.join('\n');
+  // Section 2: Raw Simulation Curve Data
+  if (chartData && chartData.length > 0) {
+    csvLines.push('');
+    csvLines.push('');
+    csvLines.push(`"IV CURVE ANALYSER - RAW SIMULATION DATA POINTS"`);
+    
+    // Build headers for columns
+    const dataHeaders = ['"Voltage (V)"'];
+    activeCurves.forEach(c => {
+      const unit = isLogAxis ? 'A' : 'mA';
+      dataHeaders.push(`"Current - ${c.name} (${unit})"`);
+    });
+
+    // Check if CSV overlay exists in data keys
+    const firstPoint = chartData[0];
+    const hasCsv = 'I_csv' in firstPoint || 'absI_csv' in firstPoint;
+    if (hasCsv) {
+      const unit = isLogAxis ? 'A' : 'mA';
+      dataHeaders.push(`"Current - CSV Overlay (${unit})"`);
+    }
+
+    csvLines.push(dataHeaders.join(','));
+
+    // Populate data rows
+    chartData.forEach(pt => {
+      const rowVals: any[] = [pt.V.toFixed(4)];
+      activeCurves.forEach((_, idx) => {
+        const valKey = isLogAxis ? `absI_${idx}` : `I_${idx}`;
+        const val = pt[valKey];
+        rowVals.push(val !== undefined ? val : '');
+      });
+
+      if (hasCsv) {
+        const valKey = isLogAxis ? 'absI_csv' : 'I_csv';
+        const val = pt[valKey];
+        rowVals.push(val !== undefined ? val : '');
+      }
+
+      csvLines.push(rowVals.join(','));
+    });
+  }
+
+  // Prepend UTF-8 BOM so Excel opens it with correct encoding automatically
+  const csvContent = '\uFEFF' + csvLines.join('\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
 
   const link = document.createElement('a');
   link.href = url;
   const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  link.download = `IV_Parameters_${analysisMode.replace(/\s+/g, '_')}_${timestamp}.csv`;
+  link.download = `IV_Curve_Data_${analysisMode.replace(/\s+/g, '_')}_${timestamp}.csv`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

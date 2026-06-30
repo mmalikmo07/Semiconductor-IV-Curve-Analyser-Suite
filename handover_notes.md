@@ -26,7 +26,7 @@ IV Curve Analyser/
 │   ├── main.tsx          # React application mounting entry point (TypeScript React)
 │   ├── App.tsx           # Monolithic UI view, state management, chart setups, and sidebar controls (TypeScript React)
 │   ├── physics.ts        # Shockley diode solver, database, parameter extraction, math utilities (TypeScript)
-│   ├── exports.ts        # Exporters for CSV spreadsheets, high-res PNG plots, and academic PDF reports (TypeScript)
+│   ├── exports.ts        # Exporters for PNG plots and academic PDF reports (TypeScript)
 │   ├── index.css         # Styling system (custom design tokens, Outfit typography, layout systems, theme toggles) (CSS)
 │   └── App.css           # Unused layout classes (CSS)
 ├── public/               # Static public assets
@@ -38,7 +38,7 @@ IV Curve Analyser/
 ---
 
 ## 📊 Core Simulation Modes
-The application supports three interactive analysis modes (the obsolete Wafer Map Simulation has been removed):
+The application supports three interactive analysis modes:
 
 1. **Single Material Mode**: Simulates and plots the forward/reverse bias IV curves of a single selected material at a specified temperature ($T$), series resistance ($R_s$), and breakdown voltage ($V_{br}$).
 2. **Material Comparison Mode**: Directly overlays the IV curves of two distinct selected materials (or a custom material) on the same graph to compare thresholds.
@@ -71,7 +71,7 @@ Material parameters are calibrated to produce textbook-accurate turn-on voltages
 
 ## 🎨 Interactive & Visual Features
 
-- **iOS-Style Animated Theme Toggle**: A custom sliding switch in the sidebar header with Sun (light) and Moon (dark) icons to transition between dark and light modes.
+- **iOS-Style Animated Theme Toggle**: A custom sliding switch in the sidebar header with Sun (light) and Moon (dark) icons to transition between dark and light modes. Defaults to **Light Theme** on first load.
 - **Dynamic Chart Title**: Automatically changes based on active mode (e.g. `"Material Comparison — Silicon (Si) vs Germanium (Ge)"`).
 - **Autosnapping Hover Markers**: When the cursor gets within a capture tolerance of `0.08 V` of $V_{on}$ or $V_T$:
   - The dotted reference line shifts to a thick solid line.
@@ -80,15 +80,13 @@ Material parameters are calibrated to produce textbook-accurate turn-on voltages
 - **Custom Legend**: Automatically includes standard curve entries plus dashed reference line indicators for toggled settings.
 - **Logarithmic Current**: Toggles the graph Y-axis to a logarithmic scale.
 - **Zoom Forward Bias**: Narrows the graph X-axis to `[-0.5, 1.5] V` for forward-bias inspection.
-- **Experimental CSV Overlay**: Allows drag-and-drop or file upload of external CSV datasets for side-by-side verification.
 
 ---
 
 ## 💾 Export Capabilities (`src/exports.ts`)
 
-1. **Export CSV**: Downloads a clean CSV spreadsheet containing all extracted parameters from the table.
-2. **Save Plot Image**: Captures the current chart container at a high-res **3× scaling factor** and exports it as a PNG (complete with dynamic title, gridlines, custom legend, and snapped reference lines).
-3. **Export PDF**: Generates a professional academic white A4 portrait document featuring:
+1. **Save Plot Image**: Captures the current chart container at a high-res **3× scaling factor** and exports it as a PNG (complete with dynamic title, gridlines, custom legend, and snapped reference lines).
+2. **Export PDF**: Generates a professional academic white A4 portrait document featuring:
    - Centered high-res plot image with a border.
    - Structured key-value metadata block (without broken special characters or line-spacing issues).
    - Structured data table displaying the extracted parameters, sanitizing symbols (e.g. representing $\Omega$ as `Ohm`).
