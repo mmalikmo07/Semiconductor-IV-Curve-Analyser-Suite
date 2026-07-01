@@ -98,4 +98,4 @@ The app performs **log-linear fitting** over the low-current forward bias region
 **Malik Mohamed**
 MEng Electrical & Electronic Engineering — Swansea University
 GitHub: [github.com/mmalikmo07](https://github.com/mmalikmo07)
-LinkedIn: [linkedin.com/in/malik-mohamed-2b5914394](https://linkedin.com/in/malik-mohamed-2b5914394)
+LinkedIn: [linkedin.com/in/malik-mohamed-eng/](https://www.linkedin.com/in/malik-mohamed-eng/)
