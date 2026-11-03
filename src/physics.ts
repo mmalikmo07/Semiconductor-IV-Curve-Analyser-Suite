@@ -90,22 +90,60 @@ export function thermalVoltage(T: number): number {
   return (k * T) / q;
 }
 
+export const T_NOM = 300; // Reference temperature (K) at which material I_s values are specified
+
+/**
+ * Temperature-scaled saturation current (SPICE diode model, XTI = 3):
+ *
+ *   I_s(T) = I_s(T_nom) · (T/T_nom)^(XTI/n) · exp( (q·E_g / (n·k)) · (1/T_nom − 1/T) )
+ *
+ * I_s rises steeply with temperature, which is why a real silicon diode's
+ * forward voltage falls by roughly 2 mV/K at constant current.
+ */
+export function saturationCurrentAtT(
+  I_s_nom: number,
+  E_g: number,
+  n: number,
+  T: number,
+  XTI = 3,
+  T_nom = T_NOM
+): number {
+  const exponent = ((q * E_g) / (n * k)) * (1 / T_nom - 1 / T);
+  return I_s_nom * Math.pow(T / T_nom, XTI / n) * Math.exp(exponent);
+}
+
+/**
+ * Solve for the junction voltage V_d of a diode with series resistance R_s:
+ *
+ *   V_ext = V_d + R_s · I_s · (exp(V_d / V_0) − 1),   with V_0 = n·V_T
+ *
+ * The left-hand side is strictly increasing in V_d, so the root is unique and
+ * bracketed by [0, V_ext]. Newton's method is used for speed, with a bisection
+ * fallback whenever a Newton step leaves the bracket, so it always converges.
+ */
 export function solveDiodeVD(V_ext: number, I_s: number, R_s: number, V_0: number): number {
-  const y = R_s * I_s;
-  if (y <= 0) return V_ext;
+  if (R_s <= 0 || I_s <= 0 || V_ext <= 0) return V_ext;
 
-  // Starting guess
-  let V_d_m = V_0 * Math.log(Math.max(1e-15, V_ext / y));
-  V_d_m = Math.max(0.0, Math.min(V_ext, V_d_m));
+  const f = (vd: number) => vd + R_s * I_s * Math.expm1(vd / V_0) - V_ext;
+  const df = (vd: number) => 1 + ((R_s * I_s) / V_0) * Math.exp(vd / V_0);
 
-  // 8 iterations converge robustly
-  for (let i = 0; i < 8; i++) {
-    const numerator = Math.max(1e-15, V_ext - V_d_m + y);
-    V_d_m = V_0 * Math.log(numerator / y);
-    V_d_m = Math.max(0.0, Math.min(V_ext, V_d_m));
+  let lo = 0;
+  let hi = V_ext;
+  // Initial guess: the smaller of the "no R_s" and "all current limited by R_s" estimates
+  let vd = Math.min(V_ext, V_0 * Math.log1p(V_ext / (R_s * I_s)));
+
+  for (let i = 0; i < 100; i++) {
+    const fv = f(vd);
+    if (Math.abs(fv) < 1e-12) break;
+    if (fv > 0) hi = vd; else lo = vd;
+
+    let next = vd - fv / df(vd);
+    if (!(next > lo && next < hi)) next = 0.5 * (lo + hi); // keep inside the bracket
+    if (Math.abs(next - vd) < 1e-15) { vd = next; break; }
+    vd = next;
   }
 
-  return V_d_m;
+  return vd;
 }
 
 export function computeIV(
@@ -116,7 +154,7 @@ export function computeIV(
   V_br = 15.0,
   V_min = -15.0,
   V_max = 4.0,
-  n_points = 500
+  n_points = 1500
 ): { V: number[]; I: number[] } {
   const V_T = thermalVoltage(T);
   const V: number[] = [];
@@ -189,33 +227,61 @@ export function extractParameters(V: number[], I: number[], T: number): Extracte
     }
   }
 
-  // Ideality factor and saturation current from log-linear fit:
-  // We fit in low-current region (1nA to 1mA) to avoid series resistance flattening
-  const xVals: number[] = [];
-  const yVals: number[] = [];
+  // Ideality factor and saturation current, fitted over the low-current forward
+  // region (1 nA to 1 mA) where series-resistance flattening is negligible.
+  //
+  // Step 1: the classic log-linear fit, ln(I) = ln(I_s) + V/(n·V_T). This
+  // assumes exp(V/nV_T) − 1 ≈ exp(V/nV_T), which fails when I_s is large
+  // (low-bandgap materials, or any material when hot): the "−1" bends ln(I)
+  // near V = 0 and biases the fit (≈5% error in n and ≈35% in I_s for Ge at
+  // 300 K, worse at high temperature).
+  //
+  // Step 2: refine against the full Shockley form without that approximation,
+  // alternating two closed-form least-squares updates until they converge:
+  //   n   from ln(I/I_s + 1) = V/(n·V_T)            (line through the origin)
+  //   I_s from ln(I_s) = mean[ ln(I / expm1(V/(n·V_T))) ]
+  const xs: number[] = [];
+  const Is_: number[] = [];
   for (let i = 0; i < V.length; i++) {
     if (V[i] > 0 && I[i] > 1e-9 && I[i] < 1e-3) {
-      xVals.push(V[i]);
-      yVals.push(Math.log(I[i]));
+      xs.push(V[i]);
+      Is_.push(I[i]);
     }
   }
 
-  if (xVals.length > 5) {
-    const N = xVals.length;
+  if (xs.length >= 6) {
+    const N = xs.length;
     let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
     for (let i = 0; i < N; i++) {
-      sumX += xVals[i];
-      sumY += yVals[i];
-      sumXY += xVals[i] * yVals[i];
-      sumXX += xVals[i] * xVals[i];
+      const y = Math.log(Is_[i]);
+      sumX += xs[i]; sumY += y; sumXY += xs[i] * y; sumXX += xs[i] * xs[i];
+    }
+    const slope = (N * sumXY - sumX * sumY) / (N * sumXX - sumX * sumX);
+    let n = 1 / (slope * V_T); // slope = 1 / (n · V_T)
+    let I_sat = Math.exp((sumY - slope * sumX) / N);
+
+    for (let iter = 0; iter < 200; iter++) {
+      let sVY = 0, sVV = 0;
+      for (let i = 0; i < N; i++) {
+        sVY += xs[i] * Math.log1p(Is_[i] / I_sat);
+        sVV += xs[i] * xs[i];
+      }
+      const nNew = sVV / (sVY * V_T);
+
+      let sLog = 0;
+      for (let i = 0; i < N; i++) sLog += Math.log(Is_[i] / Math.expm1(xs[i] / (nNew * V_T)));
+      const IsNew = Math.exp(sLog / N);
+
+      const converged = Math.abs(nNew / n - 1) < 1e-10 && Math.abs(IsNew / I_sat - 1) < 1e-9;
+      n = nNew;
+      I_sat = IsNew;
+      if (converged) break;
     }
 
-    const slope = (N * sumXY - sumX * sumY) / (N * sumXX - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / N;
-
-    // slope = 1 / (n * V_T) => n = 1 / (slope * V_T)
-    results.n_ideality = 1 / (slope * V_T);
-    results.I_sat = Math.exp(intercept);
+    if (Number.isFinite(n) && Number.isFinite(I_sat) && n > 0) {
+      results.n_ideality = n;
+      results.I_sat = I_sat;
+    }
   }
 
   return results;
@@ -245,7 +311,7 @@ export function generateWaferData(
   gridSize = 11
 ): { dies: DieData[]; waferRadius: number } {
   const mat = MATERIALS[materialName] || MATERIALS['Silicon (Si)'];
-  const I_s_base = mat.I_s;
+  const I_s_base = saturationCurrentAtT(mat.I_s, mat.bandgap, mat.n, T);
   const n_base = mat.n;
   const waferRadius = 5.2;
 

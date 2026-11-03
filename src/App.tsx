@@ -20,6 +20,7 @@ import {
 import { 
   MATERIALS, 
   computeIV, 
+  saturationCurrentAtT,
   extractParameters, 
   formatParam
 } from './physics';
@@ -143,19 +144,19 @@ export default function App() {
       }> = [];
 
       if (analysisMode === 'Single Material') {
-        const { V, I } = computeIV(m1.I_s, m1.n, temperature, seriesRes, vbr, V_min, V_max);
+        const { V, I } = computeIV(saturationCurrentAtT(m1.I_s, m1.bandgap, m1.n, temperature), m1.n, temperature, seriesRes, vbr, V_min, V_max);
         const params = extractParameters(V, I, temperature);
         curves.push({ V, I, color: m1.color, name: mat1, params });
       } else if (analysisMode === 'Material Comparison') {
         const m2 = getMaterialParams(mat2);
         
         // Curve 1
-        const { V: V1, I: I1 } = computeIV(m1.I_s, m1.n, temperature, seriesRes, vbr, V_min, V_max);
+        const { V: V1, I: I1 } = computeIV(saturationCurrentAtT(m1.I_s, m1.bandgap, m1.n, temperature), m1.n, temperature, seriesRes, vbr, V_min, V_max);
         const params1 = extractParameters(V1, I1, temperature);
         curves.push({ V: V1, I: I1, color: m1.color, name: mat1, params: params1 });
         
         // Curve 2
-        const { V: V2, I: I2 } = computeIV(m2.I_s, m2.n, temperature, seriesRes, vbr, V_min, V_max);
+        const { V: V2, I: I2 } = computeIV(saturationCurrentAtT(m2.I_s, m2.bandgap, m2.n, temperature), m2.n, temperature, seriesRes, vbr, V_min, V_max);
         const params2 = extractParameters(V2, I2, temperature);
         curves.push({ V: V2, I: I2, color: m2.color, name: mat2, params: params2 });
       } else { // Temperature Sweep
@@ -164,7 +165,7 @@ export default function App() {
         const labels = ['200 K (Cold)', `${temperature} K (Selected)`, '500 K (Hot)'];
         
         temps.forEach((t, idx) => {
-          const { V, I } = computeIV(m1.I_s, m1.n, t, seriesRes, vbr, V_min, V_max);
+          const { V, I } = computeIV(saturationCurrentAtT(m1.I_s, m1.bandgap, m1.n, t), m1.n, t, seriesRes, vbr, V_min, V_max);
           const params = extractParameters(V, I, t);
           curves.push({ V, I, color: colors[idx], name: labels[idx], params });
         });
